@@ -1,0 +1,11 @@
+# Ignorer les fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Ignorer les poids pré-entraînés
+model/utils/*.pth
+model/utils/resnet50_v2.pth
+
+# Ignorer les checkpoints
+runs/
+wandb/
