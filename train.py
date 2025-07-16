@@ -167,12 +167,46 @@ class Trainer:
 
         return color_mask
 
+    def create_composite(self, data_inputs, pred, target, epoch, phase, composite_idx):
+        """Crée un composite IRC-prédiction-target pour TensorBoard."""
+        # Prendre le premier élément du batch
+        irc_input = data_inputs[0][0]  # Premier data_type (IRC), premier échantillon
+        pred_mask = torch.argmax(pred[0][0], dim=0)  # Prédiction, premier échantillon
+        target_mask = target[0]  # Target, premier échantillon
+        
+        # Dénormaliser l'image IRC
+        irc_denorm = self.denormalize(irc_input, irc_mean, irc_std)
+        irc_denorm = torch.clamp(irc_denorm, 0, 1)
+        
+        # Coloriser les masques
+        pred_colored = self.colorize_mask(pred_mask)
+        target_colored = self.colorize_mask(target_mask)
+        
+        # Convertir IRC en numpy et redimensionner si nécessaire
+        irc_np = irc_denorm.cpu().numpy().transpose(1, 2, 0)
+        if irc_np.shape[2] == 3:
+            irc_display = (irc_np * 255).astype(np.uint8)
+        else:
+            # Si c'est une image mono-canal, la répéter sur 3 canaux
+            irc_display = np.repeat((irc_np[:, :, 0:1] * 255).astype(np.uint8), 3, axis=2)
+        
+        # Créer le composite horizontal
+        composite = np.hstack([irc_display, pred_colored, target_colored])
+        
+        # Ajouter à TensorBoard avec un tag qui permet la navigation chronologique
+        tag = f"Visualisation/{phase}_composite_{composite_idx}"
+        self.writer.add_image(tag, composite, epoch, dataformats='HWC')
+
     def training(self, epoch):
         """Entraîne le modèle pour une époque donnée."""
         train_loss = 0.0
         self.model.train()
 
         total_inter, total_union, total_correct, total_label = 0, 0, 0, 0
+        
+        # Variables pour capturer les composites
+        composite_saved = 0
+        composite_interval = len(self.trainloader) // 2  # Pour avoir 2 composites par époque
         
         for i, batch in tqdm(enumerate(self.trainloader), total=len(self.trainloader)):
             self.scheduler(self.optimizer, i, epoch, sum(self.best_pred))
@@ -191,6 +225,12 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
+            # Sauvegarder les composites à intervalles réguliers
+            if composite_saved < 2 and i % composite_interval == 0:
+                with torch.no_grad():
+                    self.create_composite(data_inputs, outputs, target, epoch, 'train', composite_saved + 1)
+                    composite_saved += 1
+
             correct, labeled = utils.batch_pix_accuracy(outputs[0].data, target)
             inter, union = utils.batch_intersection_union(outputs[0].data, target, self.nclass)
             total_correct += correct
@@ -202,15 +242,15 @@ class Trainer:
             if (i + 1) % self.train_step == 0:
                 avg_loss = train_loss / self.train_step
                 print('Époque {}, étape {}, perte {}'.format(epoch + 1, i + 1, avg_loss))
-                self.writer.add_scalar('train_loss', avg_loss, epoch * len(self.trainloader) + i)
+                self.writer.add_scalar('loss/train', avg_loss, epoch * len(self.trainloader) + i)
                 train_loss = 0.0
 
         pixAcc = 1.0 * total_correct / (np.spacing(1) + total_label)
         IOU = 1.0 * total_inter / (np.spacing(1) + total_union)
         mIOU = IOU.mean()
         print('Époque {}, précision pixel {}, IOU moyen {}'.format(epoch + 1, pixAcc, mIOU))
-        self.writer.add_scalar("mean_iou/train", mIOU, epoch)
-        self.writer.add_scalar("pixel accuracy/train", pixAcc, epoch)
+        self.writer.add_scalar("metrics/mean_iou/train", mIOU, epoch)
+        self.writer.add_scalar("metrics/pixel accuracy/train", pixAcc, epoch)
 
     def validation(self, epoch):
         """Évalue le modèle sur le jeu de validation."""
@@ -223,6 +263,10 @@ class Trainer:
 
         self.model.eval()
         total_inter, total_union, total_correct, total_label, total_loss = 0, 0, 0, 0, 0
+        
+        # Variables pour capturer les composites
+        composite_saved = 0
+        composite_interval = len(self.valloader) // 2  # Pour avoir 2 composites par époque
         
         for i, batch in enumerate(self.valloader):
             *data_inputs, target, name = batch
@@ -242,12 +286,18 @@ class Trainer:
             IOU = 1.0 * total_inter / (np.spacing(1) + total_union)
             mIOU = IOU.mean()
 
+            # Sauvegarder les composites à intervalles réguliers
+            if composite_saved < 2 and i % composite_interval == 0:
+                with torch.no_grad():
+                    self.create_composite(data_inputs, pred, target, epoch, 'val', composite_saved + 1)
+                    composite_saved += 1
+
             if i % self.val_step == 0:
                 print('Évaluation IOU moyen {}'.format(mIOU))
 
         loss = total_loss / len(self.valloader)
-        self.writer.add_scalar("mean_iou/val", mIOU, epoch)
-        self.writer.add_scalar("pixel accuracy/val", pixAcc, epoch)
+        self.writer.add_scalar("metrics/mean_iou/val", mIOU, epoch)
+        self.writer.add_scalar("metrics/pixel accuracy/val", pixAcc, epoch)
         self.writer.add_scalar("loss/val", loss, epoch)
 
         return pixAcc, mIOU, loss
@@ -300,7 +350,7 @@ class Trainer:
             print(f'Exporté sous {export_info}.pth')
         
         self.writer.close()
-        print(f"Logs TensorBoard sauvegardés dans : {self.TB_LOG_PATH}")
+        print(f"Logs TensorBoard sauvegardés dans : {self.TB_LOG_PATH}/{export_info}.pth")
 
 def train(root, data_types=['irc', 'mnh', 'biom']):
     """
