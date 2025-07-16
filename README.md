@@ -29,12 +29,12 @@ L’encodeur est un **ResNet18**.
 Le décodeur repose sur des blocs IRB inspirés de MobileNetV2, combinant convolutions point-wise et depth-wise pour effectuer l’upsampling tout en capturant les structures spatiales fines.
 Le papier MobileNetV2 appelle la convolution utilisé “convolutions séparables en profondeur (Depthwise Separable Convolutions)”.
 
-### Multi-modal Interaction Module
+### Pooling Attention Module  
 Le Pooling Attention Module (PAM) pondère les canaux des cartes de caractéristiques en fonction de leur importance, pour compenser la perte d'information lors de l'upsampling.  
 
 <img src="./figures/MIM.png" alt="Structure du modèle" width="500"/>  
 
-### Pooling Attention Module  
+### Multi-modal Interaction Module
 Le Multi-modal Interaction Module (MIM) applique un mécanisme d’attention croisée entre les features IRC et MNH, permettant à chaque modalité d’enrichir ses représentations à partir de l’autre.  
 
 <img src="./figures/PAM.png" alt="Structure du modèle" width="500"/>
