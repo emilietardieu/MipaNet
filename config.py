@@ -52,7 +52,7 @@ def get_config(data_types):
             'last_fusion': 'PAM'
         },
         'TGCC': {
-            'use_TGCC': False,
+            'use_TGCC': True,
             'TGCC_path': '/ccc/cont003/dsku/blanchet/home/user/inp/tardieue/MY_MIPANet_2_branches'
         }
     }
